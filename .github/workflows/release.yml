@@ -90,6 +90,63 @@ jobs:
           prerelease: false
           generate_release_notes: true
 
+  release-cache:
+    name: Release dictionary cache
+    runs-on: ubuntu-latest
+    env:
+      LINDERA_CACHE: ${{ github.workspace }}/cache
+      ARTIFACT_PATH: ${{ github.workspace }}/lindera-cache-${{ github.ref_name }}.zip
+      TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - name: Run checkout
+        uses: actions/checkout@v4
+
+      - name: Cache ~/.cargo/registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache ~/.cargo/git
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache target
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: ${{ env.TARGET }}
+
+      - name: Compile
+        run: |
+          features=$(find */ -maxdepth 2 -name build.rs -exec grep -l download_url: {} \; | cut -d/ -f1 | sed -e 's/lindera-//g' | paste -sd ',')
+          cargo build --release --features=$features --target=$TARGET --target-dir=target/cache
+
+      - name: Create zipball
+        run: |
+          cd "$LINDERA_CACHE"
+          zip -r "$ARTIFACT_PATH" .
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: ${{ env.ARTIFACT_PATH }}
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
   publish-crates:
     name: Publish crate
     strategy:
